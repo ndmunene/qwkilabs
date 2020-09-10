@@ -1,0 +1,94 @@
+﻿Working with Virtual Machines
+
+
+https://googlepluralsight.qwiklabs.com/focuses/10977917?parent=lti_session
+Objectives
+In this lab, you learn how to perform the following tasks:
+
+
+Customize an application server
+
+
+Install and configure necessary software
+
+
+Configure network access
+
+
+Schedule regular backups
+ 
+Create the VM
+
+
+gcloud beta compute instances create mc-server --zone=us-central1-a --machine-type=e2-medium 
+--image-project=debian-cloud --boot-disk-device-name=mc-server --create-disk=mode=rw,size=50,name=minecraft-disk,device-name=minecraft-disk --no-shielded-secure-boot --no-shielded-vtpm 
+
+
+Prepare the data disk
+1. Creating a directory that serves as the mount point for the data disk
+
+
+sudo mkdir -p /home/minecraft
+sudo mkfs.ext4 -F -E lazy_itable_init=0,\
+lazy_journal_init=0,discard \
+/dev/disk/by-id/google-minecraft-disk
+2. Mount the disk
+sudo mount -o discard,defaults /dev/disk/by-id/google-minecraft-disk /home/minecraft
+
+
+Install the Java Runtime Environment (JRE) and the Minecraft server
+1. To update the Debian repositories on the VM
+sudo apt-get update
+2. Installing the headless JRE
+sudo apt-get install -y default-jre-headless
+3. Navigating to the directory where the persistent disk is mounted
+cd /home/minecraft
+4. To install wget
+sudo apt-get install wget
+5. Download the current Minecraft server JAR file (1.11.2 JAR)
+sudo wget https://launcher.mojang.com/v1/objects/d0d0fe2b1dc6ab4c65554cb734270872b72dadd6/server.jar
+
+
+
+
+Initialize the Minecraft server
+sudo java -Xmx1024M -Xms1024M -jar server.jar nogui
+
+
+Create a virtual terminal screen to start the Minecraft server
+1. To install screen
+sudo apt-get install -y screen
+2. To start your Minecraft server in a screen virtual terminal
+sudo screen -S mcs java -Xmx1024M -Xms1024M -jar server.jar nogui
+
+
+Detach from the screen and close your SSH session
+sudo screen -r mcs
+exit
+
+
+Create a firewall rule
+
+
+gcloud compute firewall-rules create minecraft-rule  --direction=INGRESS --action=ALLOW --rules=tcp:25,tcp:565 --source-ranges=0.0.0.0/0 --target-tags=minecraft-server
+
+
+Create a Cloud Storage bucket
+ gsutil mb -l $LOCATION gs://$DEVSHELL_PROJECT_ID
+
+
+Create a backup script
+cd /home/minecraft
+
+
+sudo nano /home/minecraft/backup.sh
+
+
+#!/bin/bash
+screen -r mcs -X stuff '/save-all\n/save-off\n'
+/usr/bin/gsutil cp -R ${BASH_SOURCE%/*}/world gs://${YOUR_BUCKET_NAME}-minecraft-backup/$(date "+%Y%m%d-%H%M%S")-world
+screen -r mcs -X stuff '/save-on\n'
+
+
+Make the Script Executable
+sudo chmod 755 /home/minecraft/backup.sh
